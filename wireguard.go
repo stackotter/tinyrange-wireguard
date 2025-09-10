@@ -25,7 +25,6 @@ type NetHandler interface {
 
 func generateKeyPair() (device.NoisePrivateKey, device.NoisePublicKey, error) {
 	var sk device.NoisePrivateKey
-	var pk device.NoisePublicKey
 
 	if _, err := rand.Read(sk[:]); err != nil {
 		return device.NoisePrivateKey{}, device.NoisePublicKey{}, err
@@ -36,11 +35,20 @@ func generateKeyPair() (device.NoisePrivateKey, device.NoisePublicKey, error) {
 	sk[31] = (sk[31] & 127) | 64
 
 	// Calculate public key.
-	apk := (*[device.NoisePublicKeySize]byte)(&pk)
-	ask := (*[device.NoisePrivateKeySize]byte)(&sk)
-	curve25519.ScalarBaseMult(apk, ask)
+	pk := derivePublicKey(sk)
 
 	return sk, pk, nil
+}
+
+func derivePublicKey(privateKey device.NoisePrivateKey) device.NoisePublicKey {
+	var pk device.NoisePublicKey
+
+	// Calculate public key.
+	apk := (*[device.NoisePublicKeySize]byte)(&pk)
+	ask := (*[device.NoisePrivateKeySize]byte)(&privateKey)
+	curve25519.ScalarBaseMult(apk, ask)
+
+	return pk
 }
 
 type SimpleFlowHandler struct {
@@ -431,10 +439,35 @@ func NewFromConfig(addr string, mtu int, config string, handler NetHandler) (*Wi
 		return nil, err
 	}
 
+	var privateKey string
+	for _, line := range strings.Split(config, "\n") {
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			if line == "" {
+				continue
+			}
+			return nil, fmt.Errorf("invalid line: %s", line)
+		}
+
+		switch k {
+		case "private_key":
+			privateKey = v
+		}
+	}
+
+	sk, err := hex.DecodeString(privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	pk := derivePublicKey(device.NoisePrivateKey(sk))
+
 	wg := &Wireguard{
-		dev:     dev,
-		stack:   stack,
-		handler: handler,
+		dev:       dev,
+		stack:     stack,
+		publicKey: pk,
+		allowed:   []string{"0.0.0.0/0"},
+		handler:   handler,
 	}
 
 	if err := wg.setupForwarding(); err != nil {
