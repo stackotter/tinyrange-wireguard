@@ -185,7 +185,7 @@ func (s *SimpleFlowHandler) HandleConn(network string, ip net.IP, port uint16, c
 		Port: int(port),
 	})
 	if err != nil {
-		slog.Error("error handling tcp conn", "err", err)
+		slog.Error("error handling tcp conn", "err", err, "listeners", s.listeners)
 		conn.Close()
 		return
 	}
@@ -238,7 +238,7 @@ func (wg *Wireguard) Close() error {
 	return nil
 }
 
-func (wg *Wireguard) CreatePeer(publicIp string) (string, error) {
+func (wg *Wireguard) CreatePeer(publicIp string, peerIp string) (string, error) {
 	ipc, err := wg.dev.IpcGet()
 	if err != nil {
 		return "", err
@@ -276,10 +276,7 @@ func (wg *Wireguard) CreatePeer(publicIp string) (string, error) {
 	var config []string
 
 	config = append(config, fmt.Sprintf("public_key=%s", peerPublicKey))
-
-	for _, allow := range wg.allowed {
-		config = append(config, fmt.Sprintf("allowed_ip=%s", allow))
-	}
+	config = append(config, fmt.Sprintf("allowed_ip=%s/32", peerIp))
 
 	if err := wg.dev.IpcSet(strings.Join(config, "\n")); err != nil {
 		return "", err
@@ -302,7 +299,7 @@ func (wg *Wireguard) handleTcp(r *tcp.ForwarderRequest) {
 
 	ep, ipErr := r.CreateEndpoint(&wq)
 	if ipErr != nil {
-		slog.Error("error creating endpoint", "err", ipErr)
+		slog.Error("error creating endpoint", "err", ipErr, "id", id)
 		r.Complete(true)
 		return
 	}
