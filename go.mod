@@ -1,4 +1,4 @@
-module github.com/tinyrange/wireguard
+module github.com/stackotter/tinyrange-wireguard
 
 go 1.23.3
 
